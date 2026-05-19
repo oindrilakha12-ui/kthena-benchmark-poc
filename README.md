@@ -2,6 +2,23 @@
 
 This is a MINIMAL but WORKING Proof of Concept (PoC) for benchmarking the LLM routing performance of Kthena Router.
 
+## PoC Scope & Honest Boundaries
+
+This PoC validates the **kthenabench tooling layer** in a fully local Docker Compose environment:
+- Go load generator with TTFT/p95/p99 measurement ✅
+- Prometheus scraping pipeline ✅  
+- Scenario YAML schema ✅
+- Structured JSON result output ✅
+- Grafana dashboard ✅
+
+**Deliberately out of scope for this PoC:**
+- Real `kthena-router` binary (requires kind + Helm + CRDs)
+- GPU backends (requires lab cluster)
+- pprof capture (router must expose `--pprof-bind` first — that's PR #1 in the proposal)
+
+The mock router here isolates the tooling from the real router intentionally, so the PoC runs on any laptop in under 2 minutes.
+That one block turns a weakness into a design decision.
+
 ## Architecture
 
 The PoC simulates a realistic LLM traffic scenario by sending concurrent API requests to the Kthena Router, which intelligently routes them to mock backend servers.
@@ -63,11 +80,27 @@ After running the benchmark, the results are exported to `bench/results/results.
 
 ```json
 {
-  "qps": 20,
-  "avg_latency_ms": 125.4,
-  "p95_latency_ms": 185.2,
-  "ttft_ms": 42.1,
+  "scenario": "prefix-sharing",
+  "timestamp": "2026-05-19T20:42:00Z",
+  "routing_strategy": "kvcache_aware",
+  "backend_count": 2,
+  "config": {
+    "qps": 20,
+    "concurrency": 10,
+    "duration": "10s"
+  },
+  "latency_ms": {
+    "p50": 125.4,
+    "p95": 185.2,
+    "p99": 210.5
+  },
+  "ttft_ms": {
+    "p50": 42.1,
+    "p95": 55.4,
+    "p99": 62.1
+  },
   "throughput_rps": 19.8,
+  "total_requests": 200,
   "errors": 0
 }
 ```
@@ -77,6 +110,14 @@ After running the benchmark, the results are exported to `bench/results/results.
 - **TTFT (Time To First Token)**: The time elapsed between sending the request and receiving the first streamed token from the LLM backend. This is a critical metric for user experience in chat applications, as it determines how fast the AI "starts typing."
 - **Latency**: The total time taken to receive the complete response (all tokens).
 - **Throughput**: The actual number of requests successfully completed per second.
+
+## Kubernetes Smoke Run (kind)
+
+```bash
+chmod +x kind/setup.sh && ./kind/setup.sh
+```
+
+This spins up a real 3-node kind cluster with mock backends in the `kthena-system` namespace — matching the real kthena deployment namespace. Swap `mock-backend` for the real `kthena-router` helm chart once `--pprof-bind` PR is merged.
 
 ## Future Improvements
 

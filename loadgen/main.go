@@ -27,31 +27,74 @@ type ChatCompletionMessage struct {
 	Content string `json:"content"`
 }
 
-type Result struct {
+type RequestResult struct {
 	LatencyMs float64
 	TTFTMs    float64
 	Error     bool
 }
 
-type Output struct {
-	QPS           int     `json:"qps"`
-	AvgLatencyMs  float64 `json:"avg_latency_ms"`
-	P95LatencyMs  float64 `json:"p95_latency_ms"`
-	TTFTMs        float64 `json:"ttft_ms"`
-	ThroughputRps float64 `json:"throughput_rps"`
-	Errors        int     `json:"errors"`
+type PercentileSet struct {
+	P50 float64 `json:"p50"`
+	P95 float64 `json:"p95"`
+	P99 float64 `json:"p99"`
+}
+
+type ScenarioConfig struct {
+	QPS         float64 `json:"qps"`
+	Concurrency int     `json:"concurrency"`
+	Duration    string  `json:"duration"`
+}
+
+type Result struct {
+	Scenario        string         `json:"scenario"`
+	Timestamp       string         `json:"timestamp"`
+	RoutingStrategy string         `json:"routing_strategy"`
+	BackendCount    int            `json:"backend_count"`
+	Config          ScenarioConfig `json:"config"`
+	Latency         PercentileSet  `json:"latency_ms"`
+	TTFT            PercentileSet  `json:"ttft_ms"`
+	ThroughputRPS   float64        `json:"throughput_rps"`
+	TotalRequests   int            `json:"total_requests"`
+	Errors          int            `json:"errors"`
+}
+
+func calculatePercentiles(values []float64) PercentileSet {
+	if len(values) == 0 {
+		return PercentileSet{}
+	}
+	sort.Float64s(values)
+	n := len(values)
+	
+	p50Idx := int(float64(n) * 0.50)
+	p95Idx := int(float64(n) * 0.95)
+	p99Idx := int(float64(n) * 0.99)
+	
+	if p50Idx >= n { p50Idx = n - 1 }
+	if p95Idx >= n { p95Idx = n - 1 }
+	if p99Idx >= n { p99Idx = n - 1 }
+	
+	return PercentileSet{
+		P50: values[p50Idx],
+		P95: values[p95Idx],
+		P99: values[p99Idx],
+	}
 }
 
 func main() {
-	qps := flag.Int("qps", 10, "Target QPS")
+	qps := flag.Float64("qps", 10.0, "Target QPS")
 	concurrency := flag.Int("concurrency", 5, "Number of concurrent workers")
 	requests := flag.Int("requests", 100, "Total number of requests to send")
 	promptSize := flag.Int("prompt-size", 100, "Approximate size of prompt in characters")
 	url := flag.String("url", "http://localhost:8080/v1/chat/completions", "Target URL")
 	outDir := flag.String("out", "../results", "Output directory for results.json")
+	
+	// Structured parameters matching new schema
+	scenario := flag.String("scenario", "custom", "Scenario name")
+	routingStrategy := flag.String("routing-strategy", "round-robin", "Routing strategy used")
+	backendCount := flag.Int("backend-count", 2, "Number of backend instances")
 	flag.Parse()
 
-	log.Printf("Starting Load Generator: %d requests @ %d QPS, %d concurrency", *requests, *qps, *concurrency)
+	log.Printf("Starting Load Generator: %d requests @ %.2f QPS, %d concurrency", *requests, *qps, *concurrency)
 
 	prompt := strings.Repeat("A", *promptSize)
 	reqBody := ChatCompletionRequest{
@@ -64,7 +107,7 @@ func main() {
 	reqBytes, _ := json.Marshal(reqBody)
 
 	jobs := make(chan struct{}, *requests)
-	results := make(chan Result, *requests)
+	results := make(chan RequestResult, *requests)
 
 	var wg sync.WaitGroup
 
@@ -79,14 +122,14 @@ func main() {
 				
 				req, err := http.NewRequest("POST", *url, bytes.NewBuffer(reqBytes))
 				if err != nil {
-					results <- Result{Error: true}
+					results <- RequestResult{Error: true}
 					continue
 				}
 				req.Header.Set("Content-Type", "application/json")
 
 				resp, err := client.Do(req)
 				if err != nil {
-					results <- Result{Error: true}
+					results <- RequestResult{Error: true}
 					continue
 				}
 
@@ -98,7 +141,7 @@ func main() {
 					line, err := reader.ReadString('\n')
 					if err != nil {
 						if err != io.EOF {
-							results <- Result{Error: true}
+							results <- RequestResult{Error: true}
 						}
 						break
 					}
@@ -126,9 +169,9 @@ func main() {
 				}
 
 				if resp.StatusCode != http.StatusOK {
-					results <- Result{Error: true}
+					results <- RequestResult{Error: true}
 				} else {
-					results <- Result{LatencyMs: latency, TTFTMs: ttft, Error: false}
+					results <- RequestResult{LatencyMs: latency, TTFTMs: ttft, Error: false}
 				}
 			}
 		}()
@@ -165,35 +208,26 @@ func main() {
 		}
 	}
 
-	sort.Float64s(latencies)
-
-	var avgLatency, p95Latency, avgTTFT float64
-	if len(latencies) > 0 {
-		sumLatency := 0.0
-		for _, l := range latencies {
-			sumLatency += l
-		}
-		avgLatency = sumLatency / float64(len(latencies))
-		p95Latency = latencies[int(float64(len(latencies))*0.95)]
-	}
-
-	if len(ttfts) > 0 {
-		sumTTFT := 0.0
-		for _, t := range ttfts {
-			sumTTFT += t
-		}
-		avgTTFT = sumTTFT / float64(len(ttfts))
-	}
-
 	durationSec := globalEnd.Sub(globalStart).Seconds()
 	throughput := float64(*requests) / durationSec
 
-	out := Output{
-		QPS:           *qps,
-		AvgLatencyMs:  avgLatency,
-		P95LatencyMs:  p95Latency,
-		TTFTMs:        avgTTFT,
-		ThroughputRps: throughput,
+	latencyPercentiles := calculatePercentiles(latencies)
+	ttftPercentiles := calculatePercentiles(ttfts)
+
+	out := Result{
+		Scenario:        *scenario,
+		Timestamp:       globalStart.Format(time.RFC3339),
+		RoutingStrategy: *routingStrategy,
+		BackendCount:    *backendCount,
+		Config: ScenarioConfig{
+			QPS:         *qps,
+			Concurrency: *concurrency,
+			Duration:    globalEnd.Sub(globalStart).Round(time.Second).String(),
+		},
+		Latency:       latencyPercentiles,
+		TTFT:          ttftPercentiles,
+		ThroughputRPS: throughput,
+		TotalRequests: *requests,
 		Errors:        errorsCount,
 	}
 

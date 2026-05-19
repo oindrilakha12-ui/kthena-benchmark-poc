@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-backend
+  namespace: kthena-system
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mock-backend
+  template:
+    metadata:
+      labels:
+        app: mock-backend
+    spec:
+      containers:
+      - name: mock-backend
+        image: mock-backend:local   # built from your existing mock-backend/
+        env:
+        - name: RESPONSE_DELAY_MS
+          value: "50"
+        - name: TTFT_DELAY_MS
+          value: "200"
+        ports:
+        - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-backend
+  namespace: kthena-system
+spec:
+  selector:
+    app: mock-backend
+  ports:
+  - port: 80
+    targetPort: 8080

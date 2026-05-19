@@ -1,0 +1,20 @@
+# scenarios/03-prefix-sharing.yaml
+# Stresses: kvcache_aware plugin, prefix-cache hit rate under shared prompts
+# In production: targets kthena-router with prefix.go + kvcache_aware.go plugins
+# In this PoC: backend-2 simulates higher TTFT_DELAY_MS to represent cache-miss cost
+
+name: prefix-sharing
+routing_strategy: kvcache_aware  # real router uses this; mock router uses round-robin
+backend_count: 2
+duration: 2m
+warmup: 15s
+client:
+  qps: 20
+  concurrency: 10
+  requests: 200
+  prompt_size: 2048      # large prompts = higher prefix-sharing benefit
+  output_size: 256
+observe:
+  prometheus_url: http://prometheus:9090
+  pprof_url: ""          # empty = skip; set to http://kthena-router:6060 for real runs
+  scrape_interval: 5s
