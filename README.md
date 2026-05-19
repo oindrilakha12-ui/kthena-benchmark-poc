@@ -34,6 +34,8 @@ Ensure you have Docker and Docker Compose installed.
 
 4. View the live Grafana dashboard at `http://localhost:3000/d/kthena-bench` (Default login: admin/admin).
 
+![Kthena Benchmarks Dashboard](kthena_dashboard.png)
+
 ## How to Run Benchmarks
 
 The Load Generator is a Go program that sends concurrent requests to the Kthena Router. It can be run using the `docker compose run` command with different configurations. 
