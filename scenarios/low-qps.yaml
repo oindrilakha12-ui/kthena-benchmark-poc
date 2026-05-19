@@ -1,0 +1,4 @@
+qps: 5
+concurrency: 2
+requests: 50
+prompt_size: 100

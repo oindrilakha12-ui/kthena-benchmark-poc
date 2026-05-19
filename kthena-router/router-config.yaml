@@ -1,0 +1,10 @@
+scheduler:
+  plugins:
+    Score:
+      enabled:
+        - name: random
+          weight: 1
+auth:
+  issuer: ""
+  audiences: []
+  jwksUri: ""

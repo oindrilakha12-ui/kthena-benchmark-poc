@@ -1,0 +1,8 @@
+{
+  "qps": 20,
+  "avg_latency_ms": 788.055058193,
+  "p95_latency_ms": 864.173442,
+  "ttft_ms": 228.6066365473994,
+  "throughput_rps": 12.670256452615117,
+  "errors": 0
+}

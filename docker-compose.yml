@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  backend-1:
+    build:
+      context: ./mock-backend
+    environment:
+      - PORT=8080
+      - BACKEND_NAME=backend-1
+      - RESPONSE_DELAY_MS=50
+      - TTFT_DELAY_MS=200
+    ports:
+      - "8081:8080"
+    networks:
+      - kthena-net
+
+  backend-2:
+    build:
+      context: ./mock-backend
+    environment:
+      - PORT=8080
+      - BACKEND_NAME=backend-2
+      - RESPONSE_DELAY_MS=60
+      - TTFT_DELAY_MS=250
+    ports:
+      - "8082:8080"
+    networks:
+      - kthena-net
+
+  kthena-router:
+    build:
+      context: ..
+      dockerfile: ./bench/kthena-router/Dockerfile
+    environment:
+      - BACKEND_1_IP=backend-1
+      - BACKEND_2_IP=backend-2
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend-1
+      - backend-2
+    networks:
+      - kthena-net
+
+  loadgen:
+    build:
+      context: ./loadgen
+    profiles:
+      - loadgen
+    networks:
+      - kthena-net
+    volumes:
+      - ./results:/app/results
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - kthena-net
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - kthena-net
+    depends_on:
+      - prometheus
+
+networks:
+  kthena-net:
+    driver: bridge
